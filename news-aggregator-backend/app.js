@@ -1,89 +1,74 @@
-// app.js - Main Express Application
-require('dotenv').config();
+// At the top of app.js
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
-const connectDB = require('./config/database');
+const mongoose = require('mongoose');
+require('dotenv').config();
 
 const app = express();
 
-// Security Middleware
-app.use(helmet());
-
-// CORS Configuration
+// ✅ IMPORTANT: Update CORS for production
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = process.env.ALLOWED_ORIGINS 
+      ? process.env.ALLOWED_ORIGINS.split(',')
+      : ['http://localhost:3000'];
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 
-// Body Parser Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request Logging Middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
-
-// Health Check Endpoint
+// Health check endpoint (add if not exists)
 app.get('/health', (req, res) => {
   res.json({ 
-    status: 'ok',
-    message: 'News Aggregator API is running',
-    timestamp: new Date().toISOString(),
+    status: 'ok', 
+    timestamp: new Date(),
     environment: process.env.NODE_ENV || 'development'
   });
 });
 
-// API Routes
-app.use('/api/articles', require('./routes/articles'));
+// Your routes
+const articlesRoutes = require('./routes/articles');
+app.use('/api/articles', articlesRoutes);
 
-// 404 Handler
-app.use((req, res) => {
-  res.status(404).json({ 
-    error: 'Route not found',
-    path: req.path,
-    method: req.method
-  });
-});
-
-// Global Error Handler
-app.use((err, req, res, next) => {
-  console.error('❌ Error:', err.stack);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
-});
-
-// Start Server
+// ✅ CRITICAL: Must listen on process.env.PORT for Render
 const PORT = process.env.PORT || 5000;
 
-const startServer = async () => {
-  try {
-    // Connect to MongoDB
-    await connectDB();
-    
-    // Start Express Server
-    app.listen(PORT, () => {
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log(`🚀 Server running on http://localhost:${PORT}`);
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('📍 Available endpoints:');
-      console.log(`   GET  http://localhost:${PORT}/health`);
-      console.log(`   GET  http://localhost:${PORT}/api/articles`);
-      console.log(`   GET  http://localhost:${PORT}/api/articles/:id`);
-      console.log(`   POST http://localhost:${PORT}/api/articles/:id/summarize`);
-      console.log(`   POST http://localhost:${PORT}/api/articles/:id/translate`);
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    });
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
-};
+// MongoDB connection
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => {
+  console.log('✅ MongoDB Connected:', mongoose.connection.host);
+  // ✅ IMPORTANT: Listen on 0.0.0.0 for Render
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
+})
+.catch(err => {
+  console.error('❌ MongoDB connection error:', err);
+  process.exit(1);
+});
 
-startServer();
+// Error handling
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ 
+    error: 'Something went wrong!',
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
+});
 
 module.exports = app;
