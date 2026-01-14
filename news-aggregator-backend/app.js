@@ -9,14 +9,13 @@ const app = express();
 // ✅ IMPORTANT: Update CORS for production
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = process.env.ALLOWED_ORIGINS 
-      ? process.env.ALLOWED_ORIGINS.split(',')
-      : ['http://localhost:3000'];
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'https://newssphere.vercel.app', // We'll get this URL later
+      process.env.FRONTEND_URL // From environment variable
+    ].filter(Boolean);
+
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
